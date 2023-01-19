@@ -1,0 +1,809 @@
+
+<!DOCTYPE html>
+<html>
+
+	<head>
+		<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+		<meta content="utf-8" http-equiv="encoding">
+
+		<style>
+			.centre {
+			  margin: auto;
+			  border:1px solid #c3c3c3;
+			  width: 640px;
+			}
+		</style>
+		
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"
+      integrity="sha512-zhHQR0/H5SEBL3Wn6yYSaTTZej12z0hVZKOv3TwCUXT1z5qeqGcXJLLrbERYRScEDDpYIJhPC1fk31gqR783iQ=="
+      crossorigin="anonymous" defer>
+		</script>
+	
+		<script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.0.0/gl-matrix-min.js"></script>
+		
+		<!--
+for most samples webgl-utils only provides shader compiling/linking and
+canvas resizing because why clutter the examples with code that's the same in every sample.
+See https://webglfundamentals.org/webgl/lessons/webgl-boilerplate.html
+and https://webglfundamentals.org/webgl/lessons/webgl-resizing-the-canvas.html
+for webgl-utils, m3, m4, and webgl-lessons-ui.
+-->
+<script src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
+<script src="https://webglfundamentals.org/webgl/resources/m4.js"></script>
+
+		
+<!-- vertex shader -->
+<script  id="vertex-shader-3d" type="x-shader/x-vertex">
+attribute vec4 a_position;
+
+uniform mat4 u_matrix;
+
+varying vec3 v_normal;
+
+void main() {
+  gl_Position = u_matrix * a_position;
+  v_normal = normalize(a_position.xyz);
+}
+</script>
+<!-- fragment shader -->
+<script  id="fragment-shader-3d" type="x-shader/x-fragment">
+precision mediump float;
+
+// Passed in from the vertex shader.
+varying vec3 v_normal;
+
+// The texture.
+uniform samplerCube u_texture;
+
+void main() {
+   gl_FragColor = textureCube(u_texture, normalize(v_normal));
+}
+</script>
+
+
+
+	</head>
+
+
+	<body>
+		<div class="centre">
+			<canvas id="canvas" width="640" height="480"></canvas>
+			<canvas id="myCanvas" width="640" height="480" >
+
+			</canvas>
+		</div>
+		<div class="centre">
+			<input type="number" id="cell1" name="cell1" min="0" max="384">	
+			<button type="button" id="update" onclick="update()">Update</button>
+			<button type="button" id="clearGrid" onclick="clearGrid()">Clear</button>
+			<input type="number" id="neighbourtest" name="neighbourtest" min="0" max="384">
+			<button type="button" id="drawneighbour" onclick="drawneighbour()">Draw Neighbours</button>		
+			<button type="button" id="step" onclick="step()">Step</button>
+			<button type="button" id="sspaceship" onclick="sspaceship()">Spaceship</button>	
+			<button type="button" id="sspaceship2" onclick="sspaceship2()">Spaceship 2</button>	
+			<button type="button" id="sspaceship3" onclick="sspaceship3()">Spaceship 3</button>	
+			<button type="button" id="glider" onclick="glider()">glider</button>		
+			<button type="button" id="run" onclick="run()">Run</button>		
+			<button type="button" id="stop" onclick="stop()">Stop</button>				
+			<button type="button" id="random" onclick="random()">Rando</button>
+			<button type="button" id="a3spaceships" onclick="a3spaceships()">3 Spaceships</button>
+			<button type="button" id="odd" onclick="odd()">Odd</button>
+			<button type="button" id="draw3D" onclick="draw3dface()">Draw3Dface</button>
+		</div>	
+		
+		
+		<br>
+		<br>
+		<br>
+		<div class="centre">
+			<img src="https://i.imgur.com/gdd13Oq.png" alt="grid showing cell indexes">
+		</div>
+		
+		<script>
+
+			var canvas = document.getElementById("myCanvas");
+			var ctx = canvas.getContext("2d");
+			ctx.strokeStyle = "#000000";
+			
+			var running = false;
+			
+			var cells = [];
+
+			var facexoffsets = [320, 0, 160, 320, 480, 320];
+			var faceyoffsets = [0, 160, 160, 160, 160, 320];
+
+
+			var i;
+			var j;
+			
+			var canvas;
+			var gl;	
+			
+"use strict";
+  // Get A WebGL context
+  /** @type {HTMLCanvasElement} */
+  canvas3 = document.querySelector("#canvas");
+  gl = canvas3.getContext("webgl");
+  if (!gl) {
+    //
+  }
+
+  // setup GLSL program
+  var program = webglUtils.createProgramFromScripts(gl, ["vertex-shader-3d", "fragment-shader-3d"]);
+
+  // look up where the vertex data needs to go.
+  var positionLocation = gl.getAttribLocation(program, "a_position");
+
+  // lookup uniforms
+  var matrixLocation = gl.getUniformLocation(program, "u_matrix");
+  var textureLocation = gl.getUniformLocation(program, "u_texture");
+
+  // Create a buffer for positions
+  var positionBuffer = gl.createBuffer();
+  // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  // Put the positions in the buffer
+  setGeometry(gl);
+
+  // Create a texture.
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+	
+  function radToDeg(r) {
+    return r * 180 / Math.PI;
+  }
+
+  function degToRad(d) {
+    return d * Math.PI / 180;
+  }
+
+  var fieldOfViewRadians = degToRad(60);
+  var modelXRotationRadians = degToRad(0);
+  var modelYRotationRadians = degToRad(0);
+
+  // Get the starting time.
+  var then = 0;
+
+  requestAnimationFrame(drawScene);
+  
+ // 	function foo() {
+//		draw3dface();
+//		setTimeout(foo, 1000);
+//	}
+//	foo();
+
+  // Draw the scene.
+  function drawScene(time) {
+    // convert to seconds
+    time *= 0.001;
+    // Subtract the previous time from the current time
+    var deltaTime = time - then;
+    // Remember the current time for the next frame.
+    then = time;
+	
+
+
+
+    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+    // Tell WebGL how to convert from clip space to pixels
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+    gl.enable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
+
+    // Animate the rotation
+    modelYRotationRadians += -0.3 * deltaTime;
+    modelXRotationRadians += -0.2 * deltaTime;
+
+    // Clear the canvas AND the depth buffer.
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Tell it to use our program (pair of shaders)
+    gl.useProgram(program);
+
+    // Turn on the position attribute
+    gl.enableVertexAttribArray(positionLocation);
+
+    // Bind the position buffer.
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    // Tell the position attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 3;          // 3 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
+    var offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        positionLocation, size, type, normalize, stride, offset);
+
+    // Compute the projection matrix
+    var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    var projectionMatrix =
+        m4.perspective(fieldOfViewRadians, aspect, 1, 2000);
+
+    var cameraPosition = [0, 0, 2];
+    var up = [0, 1, 0];
+    var target = [0, 0, 0];
+
+    // Compute the camera's matrix using look at.
+    var cameraMatrix = m4.lookAt(cameraPosition, target, up);
+
+    // Make a view matrix from the camera matrix.
+    var viewMatrix = m4.inverse(cameraMatrix);
+
+    var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix);
+
+    var matrix = m4.xRotate(viewProjectionMatrix, modelXRotationRadians);
+    matrix = m4.yRotate(matrix, modelYRotationRadians);
+
+    // Set the matrix.
+    gl.uniformMatrix4fv(matrixLocation, false, matrix);
+
+    // Tell the shader to use texture unit 0 for u_texture
+    gl.uniform1i(textureLocation, 0);
+
+    // Draw the geometry.
+    gl.drawArrays(gl.TRIANGLES, 0, 6 * 6);
+
+    requestAnimationFrame(drawScene);
+  }
+
+
+
+// Fill the buffer with the values that define a cube.
+function setGeometry(gl) {
+  var positions = new Float32Array(
+    [
+    -0.5, -0.5,  -0.5,
+    -0.5,  0.5,  -0.5,
+     0.5, -0.5,  -0.5,
+    -0.5,  0.5,  -0.5,
+     0.5,  0.5,  -0.5,
+     0.5, -0.5,  -0.5,
+
+    -0.5, -0.5,   0.5,
+     0.5, -0.5,   0.5,
+    -0.5,  0.5,   0.5,
+    -0.5,  0.5,   0.5,
+     0.5, -0.5,   0.5,
+     0.5,  0.5,   0.5,
+
+    -0.5,   0.5, -0.5,
+    -0.5,   0.5,  0.5,
+     0.5,   0.5, -0.5,
+    -0.5,   0.5,  0.5,
+     0.5,   0.5,  0.5,
+     0.5,   0.5, -0.5,
+
+    -0.5,  -0.5, -0.5,
+     0.5,  -0.5, -0.5,
+    -0.5,  -0.5,  0.5,
+    -0.5,  -0.5,  0.5,
+     0.5,  -0.5, -0.5,
+     0.5,  -0.5,  0.5,
+
+    -0.5,  -0.5, -0.5,
+    -0.5,  -0.5,  0.5,
+    -0.5,   0.5, -0.5,
+    -0.5,  -0.5,  0.5,
+    -0.5,   0.5,  0.5,
+    -0.5,   0.5, -0.5,
+
+     0.5,  -0.5, -0.5,
+     0.5,   0.5, -0.5,
+     0.5,  -0.5,  0.5,
+     0.5,  -0.5,  0.5,
+     0.5,   0.5, -0.5,
+     0.5,   0.5,  0.5,
+
+    ]);
+
+  gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+  }
+  			
+			
+			var nmap = [[[1000,71,70,69,68,67,66,65,64,1000],
+[128,0,1,2,3,4,5,6,7,263],
+[129,8,9,10,11,12,13,14,15,262],
+[130,16,17,18,19,20,21,22,23,261],
+[131,24,25,26,27,28,29,30,31,260],
+[132,32,33,34,35,36,37,38,39,259],
+[133,40,41,42,43,44,45,46,47,258],
+[134,48,49,50,51,52,53,54,55,257],
+[135,56,57,58,59,60,61,62,63,256],
+[1000,192,193,194,195,196,197,198,199,1000]],
+
+[[1000,7,6,5,4,3,2,1,0,1000],
+[263,64,65,66,67,68,69,70,71,128],
+[271,72,73,74,75,76,77,78,79,136],
+[279,80,81,82,83,84,85,86,87,144],
+[287,88,89,90,91,92,93,94,95,152],
+[295,96,97,98,99,100,101,102,103,160],
+[303,104,105,106,107,108,109,110,111,168],
+[311,112,113,114,115,116,117,118,119,176],
+[319,120,121,122,123,124,125,126,127,184],
+[1000,383,382,381,380,379,378,377,376,1000]],
+
+[[1000,0,8,16,24,32,40,48,56,1000],
+[71,128,129,130,131,132,133,134,135,192],
+[79,136,137,138,139,140,141,142,143,200],
+[87,144,145,146,147,148,149,150,151,208],
+[95,152,153,154,155,156,157,158,159,216],
+[103,160,161,162,163,164,165,166,167,224],
+[111,168,169,170,171,172,173,174,175,232],
+[119,176,177,178,179,180,181,182,183,240],
+[127,184,185,186,187,188,189,190,191,248],
+[1000,376,368,360,352,344,336,328,320,1000]],
+
+[[1000,56,57,58,59,60,61,62,63,1000],
+[135,192,193,194,195,196,197,198,199,256],
+[143,200,201,202,203,204,205,206,207,264],
+[151,208,209,210,211,212,213,214,215,272],
+[159,216,217,218,219,220,221,222,223,280],
+[167,224,225,226,227,228,229,230,231,288],
+[175,232,233,234,235,236,237,238,239,296],
+[183,240,241,242,243,244,245,246,247,304],
+[191,248,249,250,251,252,253,254,255,312],
+[1000,320,321,322,323,324,325,326,327,1000]],
+
+[[1000,63,55,47,39,31,23,15,7,1000],
+[199,256,257,258,259,260,261,262,263,64],
+[207,264,265,266,267,268,269,270,271,72],
+[215,272,273,274,275,276,277,278,279,80],
+[223,280,281,282,283,284,285,286,287,88],
+[231,288,289,290,291,292,293,294,295,96],
+[239,296,297,298,299,300,301,302,303,104],
+[247,304,305,306,307,308,309,310,311,112],
+[255,312,313,314,315,316,317,318,319,120],
+[1000,327,335,343,351,359,367,375,383,1000]],
+
+[[1000,248,249,250,251,252,253,254,255,1000],
+[191,320,321,322,323,324,325,326,327,312],
+[190,328,329,330,331,332,333,334,335,313],
+[189,336,337,338,339,340,341,342,343,314],
+[188,344,345,346,347,348,349,350,351,315],
+[187,352,353,354,355,356,357,358,359,316],
+[186,360,361,362,363,364,365,366,367,317],
+[185,368,369,370,371,372,373,374,375,318],
+[184,376,377,378,379,380,381,382,383,319],
+[1000,127,126,125,124,123,122,121,120,1000]]];
+			
+
+//			console.log(nmap[5][9][9]);
+			
+
+			for(j=0;j<6;j++)
+			{
+				for(i=0;i<64;i++)
+				{
+					var buildneighbours = [];
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1-1][(i%8)+1-1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1-1][(i%8)+1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1-1][(i%8)+1+1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1][(i%8)+1-1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1][(i%8)+1+1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1+1][(i%8)+1-1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1+1][(i%8)+1]);
+					buildneighbours.push(nmap[j][Math.floor((i/8))+1+1][(i%8)+1+1]);
+					
+					cells.push({face:j, status:false, row:Math.floor(i/8), col:i%8, neighbours:buildneighbours});
+				}
+			}
+			
+			
+			draw();
+			
+			canvas.onclick = function(e) {
+				event = e;
+				var clickX = event.layerX;
+				var clickY = event.layerY;
+				var face = -1;
+				if(clickX > 320 && clickX <480 && clickY < 160){
+					face = 1;				
+				}
+				if(clickY > 160 && clickY <  320){
+					if(clickX < 160){
+						face=2;
+					}
+					if(clickX > 160 && clickX < 320){
+						face=3;
+					}
+					if(clickX > 320 && clickX < 480){
+						face = 4;
+					}
+					if(clickX > 480){
+						face = 5
+					}
+				}
+				if(clickY > 320 && clickX > 320 && clickX < 480){
+					face = 6;
+				}
+				
+				
+				var row;
+				var col;
+				var idx;
+				if(face==1){
+					row = Math.floor(clickY / 20);
+					col = Math.floor((clickX - 320) / 20)
+					idx = row*8+col;
+
+				}
+				if(face==2){
+					row = Math.floor((clickY - 160) / 20);
+					col = Math.floor(clickX / 20);
+					idx = 64+(row*8)+col;
+				}
+				if(face==3){
+					row = Math.floor((clickY - 160) / 20);
+					col = Math.floor((clickX-160) / 20);
+					idx = 128+(row*8)+col;
+				}
+				if(face==4){
+					row = Math.floor((clickY - 160) / 20);
+					col = Math.floor((clickX -320) / 20);
+					idx = 192+(row*8)+col;
+				}
+				if(face==5){
+					row = Math.floor((clickY - 160) / 20);
+					col = Math.floor((clickX-480) / 20);
+					idx = 256+(row*8)+col;
+				}	
+				if(face==6){
+					row = Math.floor((clickY - 320) / 20);
+					col = Math.floor((clickX-320) / 20);
+					idx = 320+(row*8)+col;
+				}				
+
+				
+				if(cells[idx].status==false){cells[idx].status = true;}
+				else if(cells[idx].status==true){cells[idx].status = false;}
+				draw();				
+				console.log("face: " + face + " row: " + row + " col: " + col + " idx: " + idx);
+				
+				
+			}
+			
+		
+			
+			
+	function draw(){
+		ctx.clearRect(0,0,640,480);
+		for(i=0;i<384;i++)
+		{
+			if(cells[i].status){
+				ctx.fillRect(cells[i].col*20+facexoffsets[cells[i].face], cells[i].row*20+faceyoffsets[cells[i].face], 20, 20);
+			}
+			else{
+				ctx.strokeRect(cells[i].col*20+facexoffsets[cells[i].face], cells[i].row*20+faceyoffsets[cells[i].face], 20, 20);
+			}
+		}
+		draw3dface();
+	}
+			
+	function update(){
+		cells[document.getElementById("cell1").value].status = true;
+		draw();
+
+	}
+	
+			function clearGrid(){
+				var k;
+				for(k=0; k<384;k++){
+					cells[k].status=false;
+				}
+				draw();
+
+			}
+			
+			function drawneighbour(){
+				var ab;
+				var inval = document.getElementById("neighbourtest").value;
+				
+				var nlist = cells[inval].neighbours;
+				console.log(nlist);
+				for(ab=0;ab<8;ab++)
+				{
+					if(nlist[ab] != 1000){
+						cells[nlist[ab]].status = true;
+						draw();
+					}
+				}
+			}
+			
+			function step(){
+				var ac;
+				var nextgen = [];
+				var ae;
+				for(ae=0;ae<384;ae++){
+					nextgen[ae]=false;
+				}
+				//console.log(nextgen);
+				for(ac=0;ac<384;ac++)
+				{
+					var nlist = cells[ac].neighbours;
+					var ad;
+					var numNeighbours = 0;
+					for(ad=0;ad<8;ad++){
+						if(nlist[ad] != 1000){
+							if(cells[nlist[ad]].status){
+								numNeighbours++;
+							}
+						}
+					}
+					if(numNeighbours == 3){
+						nextgen[ac] = true;
+					}
+					if(cells[ac].status && numNeighbours == 2){
+						nextgen[ac] = true;
+					}
+				}
+				var af;
+				//console.log(nextgen);
+				for(af=0;af<384;af++){
+					if(nextgen[af]){
+						cells[af].status = true;
+					}
+					else{
+						cells[af].status = false;
+					}
+				}
+				draw();
+			}
+			
+			
+			
+			function run(){
+				running = true;
+				function runningfun(){
+					if(!running){return;}
+					step();
+					setTimeout(runningfun, 200);
+				}
+				runningfun();
+				
+			}
+			
+			function stop(){
+				running = false;
+			}
+			
+			function random(){
+				var ag;
+				for(ag=0;ag<384;ag++){
+					if(Math.random() < 0.5){
+						cells[ag].status=true;
+					}
+					else{
+						cells[ag].status=false;
+					}
+				}
+				draw();
+						
+			}
+			
+			function odd(){
+				var oddc;
+				for(oddc=0;oddc<384;oddc+=2){
+					cells[oddc].status=true;
+				}
+				draw();
+				
+						
+			}		
+		
+
+
+	function draw3dface(){
+	  
+		// Get A 2D context
+		/** @type {Canvas2DRenderingContext} */
+		const ctx = document.createElement("canvas").getContext("2d");
+
+		ctx.canvas.width = 128;
+		ctx.canvas.height = 128;
+
+		const faceInfos = [
+		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_X, faceColor: '#ADD8E6', textColor: '#F00', text: '1' },
+		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X, faceColor: '#ADD8E6', textColor: '#F00', text: '2' },
+		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_Y, faceColor: '#ADD8E6', textColor: '#F00', text: '3' },
+		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, faceColor: '#ADD8E6', textColor: '#F00', text: '4' },
+		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_Z, faceColor: '#ADD8E6', textColor: '#F00', text: '5' },
+		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, faceColor: '#ADD8E6', textColor: '#F00', text: '6' },
+		];
+		var facei;
+		for(facei=0;facei<6;facei++){
+			const {target, faceColor, textColor, text} = faceInfos[facei];
+			generateFace(ctx, faceColor, textColor, text, facei);
+
+			// Upload the canvas to the cubemap face.
+			const level = 0;
+			const internalFormat = gl.RGBA;
+			const format = gl.RGBA;
+			const type = gl.UNSIGNED_BYTE;
+			gl.texImage2D(target, level, internalFormat, format, type, ctx.canvas);
+		}
+		gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+		gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+	}	
+	
+function generateFace(ctx, faceColor, textColor, text, facei) {
+
+//offbits
+  const {width, height} = ctx.canvas;
+  ctx.fillStyle = faceColor;
+  ctx.fillRect(0, 0, width, height);
+  var i,j;
+  for(i=0;i<8;i++){
+    for(j=0;j<8;j++){
+      ctx.strokeRect(i*16,j*16,16,16);
+    }
+  }
+  
+  
+  ///on bits
+  ctx.fillStyle = '#F0E68C';
+	if(facei==0){
+		var ctl;
+		for(ctl=256;ctl<320;ctl++){
+			itl = ctl-256;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+	
+  
+		}
+	}
+	if(facei==1){
+		var ctl;
+		for(ctl=128;ctl<192;ctl++){
+			itl = ctl-128;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+		}
+	}
+	if(facei==2){
+		var ctl;
+		for(ctl=0;ctl<64;ctl++){
+			itl=ctl;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+		}
+	}
+	if(facei==3){
+		var ctl;
+		for(ctl=320;ctl<384;ctl++){
+			itl = ctl-320;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+		}
+	}
+	if(facei==4){
+		var ctl;
+		
+		for(ctl=192;ctl<256;ctl++){
+			itl = ctl-192;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+		}
+	}
+	
+	if(facei==5){
+		var ctl;		
+		for(ctl=64;ctl<128;ctl++){
+			itl = ctl-64;
+			if(cells[ctl].status){
+				ctx.fillRect((itl%8)*16,Math.floor(itl/8)*16,16,16);
+			}
+		}
+	}
+  
+  
+  //number
+  ctx.font = `${width * 0.7}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = textColor;
+//  ctx.fillText(text, width / 2, height / 2);
+}
+
+
+
+
+ function sspaceship(){
+				cells[81].status = true;
+				cells[97].status = true;
+				cells[106].status = true;
+				cells[107].status = true;
+				cells[108].status = true;
+				cells[109].status = true;
+				cells[101].status = true;
+				cells[93].status = true;
+				cells[84].status = true;
+				draw();
+			}
+			
+			function sspaceship2(){
+				cells[203].status = true;
+				cells[204].status = true;
+				cells[205].status = true;
+				cells[213].status = true;
+				cells[221].status = true;
+				cells[229].status = true;
+				cells[236].status = true;
+				cells[210].status = true;
+				cells[234].status = true;
+				draw();
+			}
+			function sspaceship3(){
+				cells[265].status = true;
+				cells[258].status = true;
+				cells[259].status = true;
+				cells[260].status = true;
+				cells[268].status = true;
+				cells[276].status = true;
+				cells[284].status = true;
+				cells[291].status = true;
+				cells[289].status = true;
+				draw();
+			}
+			
+			function a3spaceships(){
+				cells[51].status = true;
+				cells[52].status = true;
+				cells[53].status = true;
+				cells[62].status = true;
+				cells[59].status = true;
+				cells[195].status = true;
+				cells[203].status = true;
+				cells[212].status = true;
+				cells[214].status = true;
+				
+				cells[83].status = true;
+				cells[86].status = true;
+				cells[95].status = true;
+				cells[103].status = true;
+				cells[111].status = true;
+				cells[110].status = true;
+				cells[109].status = true;
+				cells[108].status = true;
+				cells[99].status = true;
+				
+				cells[329].status = true;
+				cells[332].status = true;
+				cells[341].status = true;
+				cells[349].status = true;
+				cells[357].status = true;
+				cells[356].status = true;
+				cells[355].status = true;
+				cells[354].status = true;
+				cells[345].status = true;
+				draw();
+			}			
+			
+			
+			function glider(){
+				cells[210].status = true;
+				cells[203].status = true;
+				cells[204].status = true;
+				cells[212].status = true;
+				cells[220].status = true;
+				draw();
+			}
+
+			
+			
+
+		</script>
+		
+
+
+
+
+	</body>	
+</html>
